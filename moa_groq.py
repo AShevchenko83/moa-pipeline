@@ -3,7 +3,7 @@ import copy  # Standard library for making shallow and deep copy operations
 import asyncio  # Standard library for asynchronous I/O
 from typing import List, Union, Generator, Iterator  # Typing module for type hints
 from dotenv import load_dotenv  # Module to load environment variables from a .env file
-# from loguru import logger  # Third-party logging library
+from loguru import logger  # Third-party logging library
 from pydantic import BaseModel  # Third-party library for data validation using Python type annotations
 from groq import AsyncGroq  # Library for interacting with the Groq API
 
@@ -13,8 +13,8 @@ from groq import AsyncGroq  # Library for interacting with the Groq API
 load_dotenv()
 
 # Configure logging
-# logger.add("pipeline-gorq.log", rotation="1 MB", retention="10 days", level="DEBUG")
-# logger.debug("Logging initialized")
+logger.add("pipeline-gorq.log", rotation="1 MB", retention="10 days", level="DEBUG")
+logger.debug("Logging initialized")
 
 # Define default values and model configuration using environment variables
 GROQ_DEFAULT_MAX_TOKENS = int(os.getenv("GROQ_DEFAULT_MAX_TOKENS", "4096"))
@@ -44,9 +44,9 @@ GROQ_MODEL_REFERENCE_3_API_KEY = os.getenv("GROQ_MODEL_REFERENCE_3_API_KEY")
 # Function to check if all required environment variables are loaded correctly
 def check_env_variable(var, var_name):
     if var is None:
-        # logger.error(f"Environment variable {var_name} is not set.")
+        logger.error(f"Environment variable {var_name} is not set.")
         raise ValueError(f"Environment variable {var_name} is not set.")
-    # logger.debug(f"{var_name}: {var}")
+    logger.debug(f"{var_name}: {var}")
     return var
 
 # Check and log model configurations
@@ -113,20 +113,20 @@ class Pipeline:
         self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         self.messages = []  # Initialize an empty list to store conversation history
 
-        # logger.debug(f"Pipeline initialized with models: {self.reference_models}")
+        logger.debug(f"Pipeline initialized with models: {self.reference_models}")
 
     # Asynchronous function to handle startup tasks
-    # async def on_startup(self):
-    #     logger.info(f"on_startup: {self.name}")
+    async def on_startup(self):
+        logger.info(f"on_startup: {self.name}")
 
-    # # Asynchronous function to handle shutdown tasks
-    # async def on_shutdown(self):
-    #     logger.info(f"on_shutdown: {self.name}")
+    # Asynchronous function to handle shutdown tasks
+    async def on_shutdown(self):
+        logger.info(f"on_shutdown: {self.name}")
 
     # Asynchronous function to make API calls to the Groq API
     async def make_api_call(self, url, headers, data):
         try:
-            # logger.info(f">>>> Making API call to {url} with data: {data}")
+            logger.info(f">>>> Making API call to {url} with data: {data}")
             response = await self.client.chat.completions.create(
                 messages=data["messages"],
                 model=data["model"],
@@ -134,15 +134,15 @@ class Pipeline:
                 temperature=data["temperature"],
                 stream=data.get("stream", False),
             )
-            # logger.info(f"Response received: {response}")
+            logger.info(f"Response received: {response}")
             return response
         except Exception as e:
-            # logger.error(f"Request failed: {e}")
+            logger.error(f"Request failed: {e}")
             return None
 
     # Asynchronous function to generate responses using a specific model
     async def generate_together(self, model_info, messages, max_tokens=GROQ_DEFAULT_MAX_TOKENS, temperature=GROQ_DEFAULT_TEMPERATURE):
-        # logger.debug(f"generate_together called with model: {model_info['name']}, messages: {messages}, max_tokens: {max_tokens}, temperature: {temperature}")
+        logger.debug(f"generate_together called with model: {model_info['name']}, messages: {messages}, max_tokens: {max_tokens}, temperature: {temperature}")
 
         url = f"{model_info['api_base']}/chat/completions"
 
@@ -158,11 +158,11 @@ class Pipeline:
             "stream": True
         }
 
-        # logger.debug(f"Request data: {data}")
+        logger.debug(f"Request data: {data}")
 
         attempts = 3  # Number of retry attempts
         while attempts > 0:
-            # logger.info(f"Sending request to {url} for model {model_info['name']}")
+            logger.info(f"Sending request to {url} for model {model_info['name']}")
 
             response = await self.make_api_call(url, headers, data)
             if response:
@@ -173,11 +173,11 @@ class Pipeline:
                             content += chunk.choices[0].delta.content
                     return content
                 except AttributeError:
-                    # logger.warning(f"Retrying API call... Attempts left: {attempts-1}")
+                    logger.warning(f"Retrying API call... Attempts left: {attempts-1}")
                     attempts -= 1
                     await asyncio.sleep(5)
 
-        # logger.error(f"Failed to get a response from model {model_info['name']} after multiple attempts.")
+        logger.error(f"Failed to get a response from model {model_info['name']} after multiple attempts.")
         return None
 
     # Asynchronous function to call reference models in parallel
@@ -185,7 +185,7 @@ class Pipeline:
         responses = []
         tasks = []
         for model in self.reference_models:
-            # logger.info(f"Using reference model: {model['name']} with API base: {model['api_base']} and API key: {model['api_key']}")
+            logger.info(f"Using reference model: {model['name']} with API base: {model['api_base']} and API key: {model['api_key']}")
             tasks.append(asyncio.create_task(self.generate_together(model, messages)))
         
         results = await asyncio.gather(*tasks)
@@ -230,31 +230,31 @@ class Pipeline:
         if len(references) > 0:
             messages = self.inject_references_to_messages(messages, references)
 
-        # logger.info(f"Generating with references for model {model_info['name']}")
+        logger.info(f"Generating with references for model {model_info['name']}")
         return await self.generate_together(model_info, messages=messages, temperature=temperature, max_tokens=max_tokens)
 
     # Asynchronous function to process a single item using a specific model
     async def process_fn(self, item, model_info, temperature=GROQ_DEFAULT_TEMPERATURE, max_tokens=GROQ_DEFAULT_MAX_TOKENS):
         messages = item["instruction"]
 
-        # logger.info(f"Processing with instruction {messages} using model {model_info['name']}")
+        logger.info(f"Processing with instruction {messages} using model {model_info['name']}")
 
         response = await self.generate_together(model_info, messages, max_tokens, temperature)
         if not response:
             raise ValueError(f"No response received from model {model_info['name']}")
 
-        # logger.info(f"Finished querying {model_info['name']}. Output: {response[:20]}")
+        logger.info(f"Finished querying {model_info['name']}. Output: {response[:20]}")
 
         return {"output": response}
 
     # Asynchronous function to process a layer of models
     async def process_layer(self, data, temperature=GROQ_DEFAULT_TEMPERATURE, max_tokens=GROQ_DEFAULT_MAX_TOKENS):
-        # logger.info(f"Processing layer with {len(self.reference_models)} agents")
+        logger.info(f"Processing layer with {len(self.reference_models)} agents")
         responses = []
         for i in range(len(self.reference_models)):
             model_info = self.reference_models[self.current_model_index]
             self.rotate_agents()  # Rotate agents after each call
-            # logger.info(f"Agent {i+1}: Using model {model_info['name']}")
+            logger.info(f"Agent {i+1}: Using model {model_info['name']}")
             response = await self.process_fn(
                 {"instruction": data["instruction"][i]},
                 model_info=model_info,
@@ -281,15 +281,15 @@ class Pipeline:
         self.messages.append({"role": "user", "content": user_message})  # Append the user message to the conversation history
 
         for i_round in range(rounds):
-            # logger.info(f"Starting round {i_round + 1} of processing.")
+            logger.info(f"Starting round {i_round + 1} of processing.")
 
             responses = await self.process_layer(data, temperature, max_tokens)
 
-            # logger.info(f"Responses after Round {i_round + 1}:")
-            # for i, response in enumerate(responses):
-            #     logger.info(f"Model {self.reference_models[i]['name']}: {response[:50]}...")
+            logger.info(f"Responses after Round {i_round + 1}:")
+            for i, response in enumerate(responses):
+                logger.info(f"Model {self.reference_models[i]['name']}: {response[:50]}...")
 
-        # logger.info("Aggregating results & querying the aggregate model...")
+        logger.info("Aggregating results & querying the aggregate model...")
 
         aggregated_responses = self.aggregate_responses(responses)
         output = await self.generate_with_references(
@@ -300,9 +300,9 @@ class Pipeline:
             references=responses,
         )
 
-        # logger.info(f"Final answer from {self.model_aggregate['name']}")
-        # logger.info("Output received from generate_with_references:")
-        # logger.info(output)
+        logger.info(f"Final answer from {self.model_aggregate['name']}")
+        logger.info("Output received from generate_with_references:")
+        logger.info(output)
 
         if multi_turn:
             for i in range(len(self.reference_models)):
@@ -314,10 +314,10 @@ class Pipeline:
 
     # Function to process user messages and run the pipeline
     def pipe(self, user_message: str, model_id: str = None, messages: List[dict] = None, body: dict = None) -> Union[str, Generator, Iterator]:
-        # logger.info(f"pipe called with user_message: {user_message}")
-        # logger.info(f"pipe called with model_id: {model_id}")
-        # logger.info(f"pipe called with messages: {messages}")
-        # logger.info(f"pipe called with body: {body}")
+        logger.info(f"pipe called with user_message: {user_message}")
+        logger.info(f"pipe called with model_id: {model_id}")
+        logger.info(f"pipe called with messages: {messages}")
+        logger.info(f"pipe called with body: {body}")
 
         final_output = asyncio.run(self.run_pipeline(user_message))
         return final_output
